@@ -16,7 +16,8 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/products")
 public class ProductController {
 
-    @Autowired private ProductService productService;
+    @Autowired
+    private ProductService productService;
 
     // --- Lấy danh sách tất cả sản phẩm ---
     @GetMapping
@@ -39,42 +40,33 @@ public class ProductController {
 
     // --- Tạo sản phẩm mới ---
     @PostMapping(consumes = {"multipart/form-data"})
-    public ResponseEntity<?> createProduct(
+    public ResponseEntity<ProductDTO> createProduct(
             @RequestPart("product") ProductDTO dto,
             @RequestPart(value = "imageFile", required = false) MultipartFile imageFile
     ) {
+        // Validation cơ bản
         if (dto.getImportPrice() == null) {
-            return ResponseEntity.badRequest().body("Import price cannot be null");
+            return ResponseEntity.badRequest().build();
         }
         if (dto.getName() == null || dto.getName().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Product name cannot be empty");
+            return ResponseEntity.badRequest().build();
         }
 
-        try {
-            Product created = productService.createProduct(dto, imageFile);
-            return ResponseEntity.status(HttpStatus.CREATED).body(new ProductDTO(created));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error saving product: " + e.getMessage());
-        }
+        Product created = productService.createProduct(dto, imageFile);
+        return ResponseEntity.status(HttpStatus.CREATED).body(new ProductDTO(created));
     }
 
     // --- Cập nhật sản phẩm ---
     @PutMapping(value = "/{id}", consumes = {"multipart/form-data"})
-    public ResponseEntity<?> updateProduct(
+    public ResponseEntity<ProductDTO> updateProduct(
             @PathVariable String id,
             @RequestPart("product") ProductDTO dto,
             @RequestPart(value = "imageFile", required = false) MultipartFile imageFile
     ) {
-        try {
-            return productService.updateProduct(id, dto, imageFile)
-                    .map(ProductDTO::new)
-                    .map(ResponseEntity::ok)
-                    .orElse(ResponseEntity.notFound().build());
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error updating product: " + e.getMessage());
-        }
+        return productService.updateProduct(id, dto, imageFile)
+                .map(ProductDTO::new)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     // --- Ẩn sản phẩm (soft delete) ---
@@ -83,8 +75,7 @@ public class ProductController {
         boolean result = productService.hideProduct(id);
         if (result) {
             return ResponseEntity.ok("Product hidden successfully");
-        } else {
-            return ResponseEntity.notFound().build();
         }
+        return ResponseEntity.notFound().build();
     }
 }
