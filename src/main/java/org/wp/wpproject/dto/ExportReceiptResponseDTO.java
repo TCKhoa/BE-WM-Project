@@ -16,6 +16,7 @@ import java.util.List;
 public class ExportReceiptResponseDTO {
     private String id;
     private String exportCode;
+    private String createdById;
     private String createdByUsername;
     private LocalDateTime createdAt;
     private String note;

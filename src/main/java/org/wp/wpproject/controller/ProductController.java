@@ -38,6 +38,16 @@ public class ProductController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    // --- Lấy danh sách sản phẩm theo Location (khu vực) ---
+    @GetMapping("/location/{locationId}")
+    public ResponseEntity<List<ProductDTO>> getProductsByLocation(@PathVariable Integer locationId) {
+        List<ProductDTO> products = productService.getProductsByLocationId(locationId)
+                .stream()
+                .map(ProductDTO::new)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(products);
+    }
+
     // --- Tạo sản phẩm mới ---
     @PostMapping(consumes = {"multipart/form-data"})
     public ResponseEntity<ProductDTO> createProduct(

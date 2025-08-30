@@ -1,23 +1,29 @@
 package org.wp.wpproject.controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.AllArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.wp.wpproject.dto.ImportReceiptRequestDTO;
 import org.wp.wpproject.dto.ImportReceiptResponseDTO;
+import org.wp.wpproject.entity.User;
+import org.wp.wpproject.service.HistoryLogService;
 import org.wp.wpproject.service.ImportReceiptService;
+import org.wp.wpproject.service.UserService;
 
 import java.util.List;
 
 /**
- * Controller cho quản lý phiếu nhập kho
+ * Controller quản lý phiếu nhập kho
+ * Mỗi hành động tạo, cập nhật, xóa đều ghi vào HistoryLog
  */
 @RestController
 @RequestMapping("/api/import-receipts")
+@AllArgsConstructor
 public class ImportReceiptController {
 
-    @Autowired
-    private ImportReceiptService importReceiptService;
+    private final ImportReceiptService importReceiptService;
+    private final HistoryLogService historyLogService;
+    private final UserService userService;
 
     // ===================== LẤY DANH SÁCH =====================
     @GetMapping
@@ -38,7 +44,15 @@ public class ImportReceiptController {
     @PostMapping
     public ResponseEntity<ImportReceiptResponseDTO> createImportReceipt(
             @RequestBody ImportReceiptRequestDTO requestDTO) {
+
         ImportReceiptResponseDTO savedDTO = importReceiptService.createImportReceipt(requestDTO);
+
+        // Ghi log hành động với user hiện tại
+        User currentUser = getCurrentUser();
+        if (currentUser != null) {
+            historyLogService.logAction("Tạo phiếu nhập " + savedDTO.getImportCode(), currentUser);
+        }
+
         return ResponseEntity.ok(savedDTO);
     }
 
@@ -47,15 +61,49 @@ public class ImportReceiptController {
     public ResponseEntity<ImportReceiptResponseDTO> updateImportReceipt(
             @PathVariable String id,
             @RequestBody ImportReceiptRequestDTO requestDTO) {
+
         return importReceiptService.updateImportReceipt(id, requestDTO)
-                .map(ResponseEntity::ok)
+                .map(updatedDTO -> {
+                    User currentUser = getCurrentUser();
+                    if (currentUser != null) {
+                        historyLogService.logAction("Cập nhật phiếu nhập " + updatedDTO.getImportCode(), currentUser);
+                    }
+                    return ResponseEntity.ok(updatedDTO);
+                })
                 .orElse(ResponseEntity.notFound().build());
     }
 
     // ===================== XÓA MỀM =====================
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> softDeleteImportReceipt(@PathVariable String id) {
-        boolean deleted = importReceiptService.softDeleteImportReceipt(id);
-        return deleted ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+        User currentUser = getCurrentUser();
+
+        if (currentUser == null) {
+            return ResponseEntity.status(403).build(); // chưa login hoặc không có quyền
+        }
+
+        // Lấy phiếu trước khi xóa để có importCode
+        var importReceiptOpt = importReceiptService.getImportReceiptById(id);
+
+        boolean deleted = importReceiptService.softDeleteImportReceipt(id, currentUser);
+
+        if (deleted && importReceiptOpt.isPresent()) {
+            String importCode = importReceiptOpt.get().getImportCode();
+            historyLogService.logAction("Xóa phiếu nhập " + importCode, currentUser);
+        }
+
+        return deleted ? ResponseEntity.noContent().build() : ResponseEntity.status(403).build();
+    }
+
+
+
+    // ===================== HỖ TRỢ LẤY NGƯỜI DÙNG =====================
+    private User getCurrentUser() {
+        try {
+            return userService.getCurrentUser();
+        } catch (Exception e) {
+            // Nếu chưa login, trả về null
+            return null;
+        }
     }
 }

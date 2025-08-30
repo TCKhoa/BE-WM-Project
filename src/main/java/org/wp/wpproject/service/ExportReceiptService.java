@@ -8,6 +8,7 @@ import org.wp.wpproject.dto.ExportReceiptResponseDTO;
 import org.wp.wpproject.entity.ExportReceipt;
 import org.wp.wpproject.entity.ExportReceiptDetail;
 import org.wp.wpproject.entity.Product;
+import org.wp.wpproject.entity.User; // <-- import User
 import org.wp.wpproject.repository.ExportReceiptRepository;
 import org.wp.wpproject.repository.ProductRepository;
 import org.wp.wpproject.repository.UserRepository;
@@ -41,23 +42,20 @@ public class ExportReceiptService {
 
     // ===================== TẠO MỚI =====================
     public ExportReceiptResponseDTO create(ExportReceipt exportReceipt, List<ExportReceiptDetailRequestDTO> detailDTOs) {
-        // Sinh ID ngắn gọn nếu chưa có
         if (exportReceipt.getId() == null || exportReceipt.getId().isBlank()) {
             exportReceipt.setId(UUID.randomUUID().toString().substring(0, 8));
         }
-        // Gán ngày tạo
+
         if (exportReceipt.getCreatedAt() == null) {
             exportReceipt.setCreatedAt(LocalDateTime.now());
         }
         exportReceipt.setDeletedAt(null);
 
-        // Gán user tạo phiếu nếu có
         if (exportReceipt.getCreatedBy() != null && exportReceipt.getCreatedBy().getId() != null) {
             userRepository.findById(exportReceipt.getCreatedBy().getId())
                     .ifPresent(exportReceipt::setCreatedBy);
         }
 
-        // Danh sách chi tiết phiếu
         List<ExportReceiptDetail> details = new ArrayList<>();
 
         if (detailDTOs != null && !detailDTOs.isEmpty()) {
@@ -65,16 +63,13 @@ public class ExportReceiptService {
                 Product product = productRepository.findById(dto.getProductId())
                         .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm: " + dto.getProductId()));
 
-                // Kiểm tra tồn kho
                 if (product.getStock() < dto.getQuantity()) {
-                    throw new RuntimeException("Sản phẩm " + product.getName() + " chỉ còn số lượng " + product.getStock()+ " trong kho!");
+                    throw new RuntimeException("Sản phẩm " + product.getName() + " chỉ còn số lượng " + product.getStock() + " trong kho!");
                 }
 
-                // Giảm số lượng tồn kho
                 product.setStock(product.getStock() - dto.getQuantity());
                 productRepository.save(product);
 
-                // Tạo chi tiết phiếu xuất
                 ExportReceiptDetail detail = dto.toEntity(product);
 
                 if (detail.getId() == null || detail.getId().isBlank()) {
@@ -83,8 +78,6 @@ public class ExportReceiptService {
 
                 detail.setExportReceipt(exportReceipt);
                 detail.setDeletedAt(null);
-
-                // Snapshot thông tin sản phẩm (tránh thay đổi sau này)
                 detail.setProductCode(product.getProductCode());
                 detail.setProductName(product.getName());
                 detail.setUnitName(product.getUnit() != null ? product.getUnit().getName() : null);
@@ -122,13 +115,29 @@ public class ExportReceiptService {
         return Optional.of(ExportReceiptResponseDTO.fromEntity(updated));
     }
 
-    // ===================== XÓA MỀM =====================
-    public boolean softDelete(String id) {
+    // ===================== XÓA MỀM CÓ PHÂN QUYỀN =====================
+    public boolean softDelete(String id, User currentUser) {
         Optional<ExportReceipt> opt = exportReceiptRepository.findByIdAndDeletedAtIsNull(id);
         if (opt.isEmpty()) return false;
 
         ExportReceipt exportReceipt = opt.get();
-        exportReceipt.setDeletedAt(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+
+        String role = currentUser.getRole(); // staff, manager, admin
+        LocalDateTime createdAt = exportReceipt.getCreatedAt();
+
+        boolean allowed = switch (role.toLowerCase()) {
+            case "admin" -> true;
+            case "manager" -> createdAt.plusWeeks(1).isAfter(now);
+            case "staff" -> createdAt.plusHours(24).isAfter(now);
+            default -> false;
+        };
+
+        if (!allowed) {
+            throw new RuntimeException("Bạn không có quyền xóa phiếu này.");
+        }
+
+        exportReceipt.setDeletedAt(now);
         exportReceiptRepository.save(exportReceipt);
         return true;
     }

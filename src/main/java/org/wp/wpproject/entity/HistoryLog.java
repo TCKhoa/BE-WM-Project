@@ -1,4 +1,3 @@
-// entity
 package org.wp.wpproject.entity;
 
 import jakarta.persistence.*;
@@ -20,7 +19,8 @@ public class HistoryLog {
     @Column(nullable = false, length = 255)
     private String action;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    // EAGER để frontend lấy username trực tiếp
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
@@ -29,4 +29,10 @@ public class HistoryLog {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    @Column(name = "status", length = 20)
+    private String status;   // SUCCESS / FAILED
+    @Column(name = "is_read", nullable = false)
+    private Boolean isRead = false;  // mặc định là chưa đọc
+
 }

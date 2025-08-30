@@ -11,6 +11,8 @@ import org.wp.wpproject.entity.Product;
 import org.wp.wpproject.repository.ImportReceiptRepository;
 import org.wp.wpproject.repository.ProductRepository;
 import org.wp.wpproject.repository.UserRepository;
+import org.wp.wpproject.entity.User;
+
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -162,14 +164,35 @@ public class ImportReceiptService {
 
     // ===================== XÓA MỀM =====================
     @Transactional
-    public boolean softDeleteImportReceipt(String id) {
+    public boolean softDeleteImportReceipt(String id, User currentUser) {
         Optional<ImportReceipt> importReceiptOpt = importReceiptRepository.findByIdAndDeletedAtIsNull(id);
         if (importReceiptOpt.isEmpty()) {
             return false;
         }
         ImportReceipt importReceipt = importReceiptOpt.get();
+
+        // Kiểm tra quyền xóa theo role
+        String role = currentUser.getRole(); // giả sử User có field role
+        LocalDateTime createdAt = importReceipt.getCreatedAt();
+        LocalDateTime now = LocalDateTime.now();
+
+        boolean canDelete = false;
+
+        if ("admin".equals(role)) {
+            canDelete = true; // admin xóa mãi mãi
+        } else if ("manager".equals(role)) {
+            canDelete = createdAt.plusDays(7).isAfter(now); // manager 7 ngày
+        } else if ("staff".equals(role)) {
+            canDelete = createdAt.plusDays(1).isAfter(now); // staff 1 ngày
+        }
+
+        if (!canDelete) {
+            return false; // không đủ quyền hoặc hết hạn
+        }
+
         importReceipt.setDeletedAt(LocalDateTime.now());
         importReceiptRepository.save(importReceipt);
         return true;
     }
+
 }
