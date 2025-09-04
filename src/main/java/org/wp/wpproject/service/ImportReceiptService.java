@@ -8,11 +8,10 @@ import org.wp.wpproject.dto.ImportReceiptResponseDTO;
 import org.wp.wpproject.entity.ImportReceipt;
 import org.wp.wpproject.entity.ImportReceiptDetail;
 import org.wp.wpproject.entity.Product;
+import org.wp.wpproject.entity.User;
 import org.wp.wpproject.repository.ImportReceiptRepository;
 import org.wp.wpproject.repository.ProductRepository;
 import org.wp.wpproject.repository.UserRepository;
-import org.wp.wpproject.entity.User;
-
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -84,7 +83,7 @@ public class ImportReceiptService {
 
         ImportReceipt saved = importReceiptRepository.save(importReceipt);
 
-        // 🔹 Cập nhật tồn kho sản phẩm
+        // 🔹 Cập nhật tồn kho sản phẩm (CỘNG thêm số lượng nhập)
         for (ImportReceiptDetail detail : saved.getDetails()) {
             Product product = detail.getProduct();
             if (product != null) {
@@ -107,7 +106,7 @@ public class ImportReceiptService {
 
         ImportReceipt oldReceipt = importReceiptOpt.get();
 
-        // 🔹 Rollback tồn kho cũ
+        // 🔹 Rollback tồn kho cũ (TRỪ đi số lượng đã nhập trước đó)
         if (oldReceipt.getDetails() != null) {
             for (ImportReceiptDetail oldDetail : oldReceipt.getDetails()) {
                 Product product = oldDetail.getProduct();
@@ -149,7 +148,7 @@ public class ImportReceiptService {
 
         ImportReceipt updated = importReceiptRepository.save(oldReceipt);
 
-        // 🔹 Cập nhật tồn kho theo chi tiết mới
+        // 🔹 Cập nhật tồn kho theo chi tiết mới (CỘNG lại số lượng nhập mới)
         for (ImportReceiptDetail detail : updated.getDetails()) {
             Product product = detail.getProduct();
             if (product != null) {
@@ -179,19 +178,33 @@ public class ImportReceiptService {
         boolean canDelete = false;
 
         if ("admin".equals(role)) {
-            canDelete = true; // admin xóa mãi mãi
+            canDelete = true; // admin xóa bất cứ lúc nào
         } else if ("manager".equals(role)) {
-            canDelete = createdAt.plusDays(7).isAfter(now); // manager 7 ngày
+            canDelete = createdAt.plusDays(7).isAfter(now); // manager trong 7 ngày
         } else if ("staff".equals(role)) {
-            canDelete = createdAt.plusDays(1).isAfter(now); // staff 1 ngày
+            canDelete = createdAt.plusDays(1).isAfter(now); // staff trong 1 ngày
         }
 
         if (!canDelete) {
-            return false; // không đủ quyền hoặc hết hạn
+            return false; // không đủ quyền hoặc hết hạn xóa
         }
 
+        // 🔹 Rollback tồn kho khi xóa (TRỪ đi số lượng đã nhập từ phiếu này)
+        if (importReceipt.getDetails() != null) {
+            for (ImportReceiptDetail detail : importReceipt.getDetails()) {
+                Product product = detail.getProduct();
+                if (product != null) {
+                    int rollbackQuantity = product.getStock() - detail.getQuantity();
+                    product.setStock(Math.max(rollbackQuantity, 0)); // tránh âm
+                    productRepository.save(product);
+                }
+            }
+        }
+
+        // 🔹 Đánh dấu đã xóa mềm
         importReceipt.setDeletedAt(LocalDateTime.now());
         importReceiptRepository.save(importReceipt);
+
         return true;
     }
 

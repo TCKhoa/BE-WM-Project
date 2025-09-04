@@ -8,7 +8,7 @@ import org.wp.wpproject.dto.ExportReceiptResponseDTO;
 import org.wp.wpproject.entity.ExportReceipt;
 import org.wp.wpproject.entity.ExportReceiptDetail;
 import org.wp.wpproject.entity.Product;
-import org.wp.wpproject.entity.User; // <-- import User
+import org.wp.wpproject.entity.User;
 import org.wp.wpproject.repository.ExportReceiptRepository;
 import org.wp.wpproject.repository.ProductRepository;
 import org.wp.wpproject.repository.UserRepository;
@@ -42,34 +42,43 @@ public class ExportReceiptService {
 
     // ===================== TẠO MỚI =====================
     public ExportReceiptResponseDTO create(ExportReceipt exportReceipt, List<ExportReceiptDetailRequestDTO> detailDTOs) {
+        // Sinh ID nếu chưa có
         if (exportReceipt.getId() == null || exportReceipt.getId().isBlank()) {
             exportReceipt.setId(UUID.randomUUID().toString().substring(0, 8));
         }
 
+        // Set thời gian tạo
         if (exportReceipt.getCreatedAt() == null) {
             exportReceipt.setCreatedAt(LocalDateTime.now());
         }
         exportReceipt.setDeletedAt(null);
 
+        // Gán thông tin người tạo
         if (exportReceipt.getCreatedBy() != null && exportReceipt.getCreatedBy().getId() != null) {
             userRepository.findById(exportReceipt.getCreatedBy().getId())
                     .ifPresent(exportReceipt::setCreatedBy);
         }
 
+        // Xử lý chi tiết phiếu xuất
         List<ExportReceiptDetail> details = new ArrayList<>();
 
         if (detailDTOs != null && !detailDTOs.isEmpty()) {
             details = detailDTOs.stream().map(dto -> {
+                // Kiểm tra sản phẩm tồn tại
                 Product product = productRepository.findById(dto.getProductId())
                         .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm: " + dto.getProductId()));
 
+                // Kiểm tra tồn kho
                 if (product.getStock() < dto.getQuantity()) {
-                    throw new RuntimeException("Sản phẩm " + product.getName() + " chỉ còn số lượng " + product.getStock() + " trong kho!");
+                    throw new RuntimeException("Sản phẩm " + product.getName() +
+                            " chỉ còn số lượng " + product.getStock() + " trong kho!");
                 }
 
+                // Cập nhật tồn kho
                 product.setStock(product.getStock() - dto.getQuantity());
                 productRepository.save(product);
 
+                // Tạo chi tiết phiếu
                 ExportReceiptDetail detail = dto.toEntity(product);
 
                 if (detail.getId() == null || detail.getId().isBlank()) {
@@ -88,6 +97,7 @@ public class ExportReceiptService {
 
         exportReceipt.setDetails(details);
 
+        // Lưu phiếu xuất
         ExportReceipt saved = exportReceiptRepository.save(exportReceipt);
         return ExportReceiptResponseDTO.fromEntity(saved);
     }
@@ -115,7 +125,7 @@ public class ExportReceiptService {
         return Optional.of(ExportReceiptResponseDTO.fromEntity(updated));
     }
 
-    // ===================== XÓA MỀM CÓ PHÂN QUYỀN =====================
+    // ===================== XÓA MỀM CÓ PHÂN QUYỀN + ROLLBACK TỒN KHO =====================
     public boolean softDelete(String id, User currentUser) {
         Optional<ExportReceipt> opt = exportReceiptRepository.findByIdAndDeletedAtIsNull(id);
         if (opt.isEmpty()) return false;
@@ -126,10 +136,11 @@ public class ExportReceiptService {
         String role = currentUser.getRole(); // staff, manager, admin
         LocalDateTime createdAt = exportReceipt.getCreatedAt();
 
+        // Phân quyền xóa
         boolean allowed = switch (role.toLowerCase()) {
-            case "admin" -> true;
-            case "manager" -> createdAt.plusWeeks(1).isAfter(now);
-            case "staff" -> createdAt.plusHours(24).isAfter(now);
+            case "admin" -> true; // Admin có thể xóa bất kỳ lúc nào
+            case "manager" -> createdAt.plusWeeks(1).isAfter(now); // Manager có thể xóa trong vòng 1 tuần
+            case "staff" -> createdAt.plusHours(24).isAfter(now); // Staff có thể xóa trong vòng 24h
             default -> false;
         };
 
@@ -137,8 +148,33 @@ public class ExportReceiptService {
             throw new RuntimeException("Bạn không có quyền xóa phiếu này.");
         }
 
+        // ======= ROLLBACK TỒN KHO =======
+        for (ExportReceiptDetail detail : exportReceipt.getDetails()) {
+            Product product = productRepository.findById(detail.getProduct().getId())
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy sản phẩm để rollback: " + detail.getProduct().getId()));
+
+            // Cộng lại số lượng đã xuất
+            product.setStock(product.getStock() + detail.getQuantity());
+            productRepository.save(product);
+        }
+
+        // Đánh dấu phiếu đã xóa (xóa mềm)
         exportReceipt.setDeletedAt(now);
         exportReceiptRepository.save(exportReceipt);
+
         return true;
     }
+
+    // ===================== XÓA VĨNH VIỄN PHIẾU ĐÃ XÓA MỀM QUÁ 30 NGÀY =====================
+    @Transactional
+    public void permanentlyDeleteOldExportReceipts(int daysThreshold) {
+        LocalDateTime cutoffDate = LocalDateTime.now().minusDays(daysThreshold);
+        List<ExportReceipt> oldReceipts = exportReceiptRepository.findAllDeletedBefore(cutoffDate);
+
+        if (!oldReceipts.isEmpty()) {
+            exportReceiptRepository.deleteAll(oldReceipts);
+            System.out.println("Đã xóa vĩnh viễn " + oldReceipts.size() + " phiếu xuất.");
+        }
+    }
+
 }

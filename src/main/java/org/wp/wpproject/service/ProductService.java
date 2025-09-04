@@ -117,6 +117,35 @@ public class ProductService {
         }).orElse(false);
     }
 
+    /**
+     * Xóa vĩnh viễn các sản phẩm đã bị xóa mềm lâu hơn X ngày
+     *
+     * @param daysThreshold số ngày giữ sản phẩm bị xóa mềm
+     */
+    public void permanentlyDeleteOldProducts(int daysThreshold) {
+        LocalDateTime cutoffDate = LocalDateTime.now().minusDays(daysThreshold);
+
+        List<Product> oldDeletedProducts = productRepository.findAll().stream()
+                .filter(p -> p.getDeletedAt() != null && p.getDeletedAt().isBefore(cutoffDate))
+                .toList();
+
+        for (Product product : oldDeletedProducts) {
+            // Xóa file ảnh nếu có
+            deleteFile(product.getImageUrl());
+
+            // Xóa luôn khỏi database
+            productRepository.delete(product);
+
+            // --- Ghi log ---
+            User currentUser = userService.getCurrentUser();
+            historyLogService.logAction(
+                    "Xóa vĩnh viễn sản phẩm: " + product.getName(),
+                    currentUser,
+                    "SUCCESS"
+            );
+        }
+    }
+
     // --- Map DTO sang Entity ---
     private void mapDtoToEntity(ProductDTO dto, Product product) {
         product.setProductCode(dto.getProductCode());
