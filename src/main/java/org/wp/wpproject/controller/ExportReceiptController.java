@@ -47,7 +47,7 @@ public class ExportReceiptController {
     ) {
         User currentUser = userService.getCurrentUser();
         ExportReceipt exportReceipt = request.getExportReceipt();
-        exportReceipt.setCreatedBy(currentUser); // gán người tạo từ token
+//        exportReceipt.setCreatedBy(currentUser); // gán người tạo từ token
 
         ExportReceiptResponseDTO created =
                 exportReceiptService.create(exportReceipt, request.getDetails());
