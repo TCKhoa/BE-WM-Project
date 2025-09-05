@@ -6,13 +6,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import org.wp.wpproject.entity.User;
-import org.wp.wpproject.service.UserDetailsServiceImpl;
 import org.wp.wpproject.service.UserService;
 import org.wp.wpproject.config.JwtUtil;
 
+/**
+ * Controller xử lý đăng nhập và tạo JWT token.
+ */
 @RestController
 @RequestMapping("/api")
 public class AuthController {
@@ -21,17 +22,20 @@ public class AuthController {
     private AuthenticationManager authenticationManager;
 
     @Autowired
-    private UserDetailsServiceImpl userDetailsService;
-
-    @Autowired
     private UserService userService;
 
     @Autowired
     private JwtUtil jwtUtil;
 
+    /**
+     * Endpoint đăng nhập.
+     * @param request DTO chứa email + password
+     * @return JWT token + thông tin cơ bản user
+     */
     @PostMapping("/login")
     public ResponseEntity<?> createToken(@RequestBody AuthRequest request) {
         try {
+            // Xác thực email và password (Spring Security sẽ dùng PasswordEncoder)
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
             );
@@ -50,23 +54,28 @@ public class AuthController {
     }
 }
 
-// DTO request
+/**
+ * DTO cho request đăng nhập
+ */
 class AuthRequest {
     private String email;
     private String password;
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+
     public String getPassword() { return password; }
     public void setPassword(String password) { this.password = password; }
 }
 
-// DTO response
+/**
+ * DTO cho response trả về sau khi đăng nhập
+ */
 class AuthResponse {
     private String token;
     private String email;
     private String username;
-    private String role; // thêm role
+    private String role;
 
     public AuthResponse(String token, String email, String username, String role) {
         this.token = token;

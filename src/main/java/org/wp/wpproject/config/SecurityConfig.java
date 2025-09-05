@@ -6,9 +6,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.crypto.password.NoOpPasswordEncoder;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 public class SecurityConfig {
@@ -16,30 +17,50 @@ public class SecurityConfig {
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    /**
+     * PasswordEncoder dùng để mã hoá mật khẩu.
+     * Nên dùng BCryptPasswordEncoder cho môi trường thực tế.
+     */
     @Bean
     public PasswordEncoder passwordEncoder() {
-        return NoOpPasswordEncoder.getInstance(); // test
+        return new BCryptPasswordEncoder();
     }
 
+    /**
+     * Cung cấp AuthenticationManager để Spring Security
+     * có thể xử lý đăng nhập và xác thực.
+     */
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 
+    /**
+     * Cấu hình bảo mật chính
+     */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable())
-                .cors(cors -> {}) // nếu có WebMvcConfigurer riêng cho CORS
+                .csrf(csrf -> csrf.disable()) // Tắt CSRF cho REST API
+                .cors(cors -> {}) // Cấu hình CORS nếu có WebMvcConfigurer riêng
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/uploads/**").permitAll()
-                        .requestMatchers("/api/login", "/api/register").permitAll()
+                        // Cho phép truy cập công khai các endpoint quan trọng
+                        .requestMatchers(
+                                "/uploads/**",
+                                "/api/auth/forgot-password",
+                                "/api/auth/send-otp",
+                                "/api/login",
+                                "/api/register",
+                                "api/auth/reset-password"
+                        ).permitAll()
+                        // Chỉ ADMIN mới được truy cập user management
                         .requestMatchers("/api/users/**").hasRole("ADMIN")
+                        // Các request còn lại phải được xác thực
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthenticationFilter, org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
+                // Thêm filter JWT vào trước UsernamePasswordAuthenticationFilter
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 }
-
